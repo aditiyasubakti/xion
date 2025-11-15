@@ -33,7 +33,8 @@ php blueprint migrate
 
 php blueprint migrate:fresh
 
---
+---
+
 **Seeder
 Buat Seeder**
 php blueprint make:seed users
