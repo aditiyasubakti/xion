@@ -1,0 +1,321 @@
+<?php
+
+require_once __DIR__ . "/system/env.php";
+$ENV = loadEnv(".env");
+
+// =======================================================
+// CONFIG DATABASE FROM ENV
+// =======================================================
+$DB = [
+    "connection" => $ENV["DB_CONNECTION"] ?? "mysql",
+    "host"       => $ENV["DB_HOST"] ?? "127.0.0.1",
+    "port"       => $ENV["DB_PORT"] ?? 3306,
+    "user"       => $ENV["DB_USER"] ?? "root",
+    "pass"       => $ENV["DB_PASS"] ?? "",
+    "name"       => $ENV["DB_NAME"] ?? "test",
+    "sqlite"     => $ENV["DB_DATABASE"] ?? "database.sqlite"
+];
+
+// =======================================================
+// AMBIL ARGUMEN CLI
+// =======================================================
+$cmd = $argv[1] ?? null;   // Perintah CLI
+$arg = $argv[2] ?? null;   // Argumen tambahan (misal nama tabel)
+
+// =======================================================
+// FUNCTION: CONNECT DB
+// =======================================================
+function db()
+{
+    global $DB;
+
+    if ($DB["connection"] === "sqlite") {
+        $path = __DIR__ . "/database/" . $DB["sqlite"];
+
+        if (!file_exists(dirname($path))) {
+            mkdir(dirname($path), 0777, true);
+        }
+
+        $conn = new SQLite3($path);
+        if (!$conn) die("❌ Gagal koneksi SQLite!\n");
+
+        return $conn;
+    }
+
+    // MYSQL
+    $mysqli = new mysqli($DB["host"], $DB["user"], $DB["pass"], "", $DB["port"]);
+    if ($mysqli->connect_error) die("❌ Koneksi gagal: " . $mysqli->connect_error);
+
+    $mysqli->query("CREATE DATABASE IF NOT EXISTS `{$DB['name']}`");
+    $mysqli->select_db($DB["name"]);
+
+    return $mysqli;
+}
+
+// =======================================================
+// LOAD MIGRATIONS
+// =======================================================
+function load_migrations()
+{
+    $folder = __DIR__ . "/database/migration";
+    if (!is_dir($folder)) return [];
+
+    $files = scandir($folder);
+    $tables = [];
+
+    foreach ($files as $file) {
+        if (pathinfo($file, PATHINFO_EXTENSION) === "php") {
+            $tables[pathinfo($file, PATHINFO_FILENAME)] =
+                include $folder . "/" . $file;
+        }
+    }
+
+    return $tables;
+}
+
+// =======================================================
+// COMMAND: make:table
+// =======================================================
+if ($cmd === "make:table") {
+    if (!$arg) {
+        echo "❌ Nama tabel tidak diberikan!\n";
+        exit;
+    }
+
+    $name = strtolower($arg);
+    $folder = __DIR__ . "/database/migration";
+    if (!is_dir($folder)) mkdir($folder, 0777, true);
+
+    $file = $folder . "/{$name}.php";
+    if (file_exists($file)) {
+        echo "❌ File {$name}.php sudah ada!\n";
+        exit;
+    }
+
+    $template = <<<EOT
+<?php
+
+return [
+    "id" => "INTEGER PRIMARY KEY AUTOINCREMENT",
+    "nama_field" => "TEXT"
+];
+EOT;
+
+    file_put_contents($file, $template);
+    echo "✔ Migration dibuat: database/migration/{$name}.php\n";
+    exit;
+}
+
+// =======================================================
+// COMMAND: migrate
+// =======================================================
+if ($cmd === "migrate") {
+    $conn = db();
+    $tables = load_migrations();
+
+    foreach ($tables as $table => $fields) {
+        $columns = [];
+        foreach ($fields as $col => $type) {
+            $columns[] = "`$col` $type";
+        }
+
+        $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(",", $columns) . ")";
+
+        $ok = ($DB["connection"] === "sqlite") ? $conn->exec($sql) : $conn->query($sql);
+
+        echo $ok ? "✔ Migrated: $table\n" : "❌ Error migrate $table\n";
+    }
+    exit;
+}
+
+// =======================================================
+// COMMAND: migrate:fresh
+// =======================================================
+if ($cmd === "migrate:fresh") {
+    $conn = db();
+    $tables = load_migrations();
+
+    echo "⚠ Menghapus semua tabel...\n";
+
+    foreach ($tables as $table => $f) {
+        $ok = ($DB["connection"] === "sqlite") ?
+            $conn->exec("DROP TABLE IF EXISTS `$table`") :
+            $conn->query("DROP TABLE IF EXISTS `$table`");
+
+        echo $ok ? "✔ Dropped: $table\n" : "❌ Gagal drop $table\n";
+    }
+
+    echo "\n🔄 Migrating ulang...\n";
+
+    $argv[1] = "migrate";
+    include __FILE__;
+    exit;
+}
+
+// =======================================================
+// COMMAND: make:seed
+// =======================================================
+if ($cmd === "make:seed") {
+    if (!$arg) {
+        echo "❌ Nama seeder tidak diberikan!\n";
+        exit;
+    }
+
+    $name = strtolower($arg);
+    $folder = __DIR__ . "/database/seeders";
+    if (!is_dir($folder)) mkdir($folder, 0777, true);
+
+    $file = $folder . "/{$name}.php";
+    if (file_exists($file)) {
+        echo "❌ Seeder {$name}.php sudah ada!\n";
+        exit;
+    }
+
+    $template = <<<EOT
+<?php
+
+return [
+    [
+        "id" => 1,
+        "nama" => "lukman",
+        "email" => "lukman@gmail.com"
+    ]
+];
+EOT;
+
+    file_put_contents($file, $template);
+    echo "✔ Seeder dibuat: database/seeders/{$name}.php\n";
+    exit;
+}
+
+// =======================================================
+// COMMAND: seed
+// =======================================================
+if ($cmd === "seed") {
+    $conn = db();
+    $folder = __DIR__ . "/database/seeders";
+
+    if (!is_dir($folder)) {
+        echo "❌ Folder database/seeders tidak ditemukan!\n";
+        exit;
+    }
+
+    $files = scandir($folder);
+    foreach ($files as $file) {
+        if (pathinfo($file, PATHINFO_EXTENSION) !== "php") continue;
+
+        $table = pathinfo($file, PATHINFO_FILENAME);
+        $rows = include $folder . "/" . $file;
+
+        foreach ($rows as $r) {
+            $cols = "`" . implode("`,`", array_keys($r)) . "`";
+            $vals = "'" . implode("','", array_values($r)) . "'";
+            $sql = "INSERT INTO `$table` ($cols) VALUES ($vals)";
+
+            $ok = ($DB["connection"] === "sqlite") ? $conn->exec($sql) : $conn->query($sql);
+            echo $ok ? "✔ Seeded $table\n" : "❌ Gagal seed $table\n";
+        }
+    }
+    exit;
+}
+
+// =======================================================
+// COMMAND: config:show
+// =======================================================
+if ($cmd === "config:show") {
+    echo "==== APP CONFIG ====\n";
+    echo "APP_TITLE    : " . ($ENV["APP_TITLE"] ?? "APP") . "\n";
+    echo "APP_ENV      : " . ($ENV["APP_ENV"] ?? "local") . "\n";
+    echo "APP_DEBUG    : " . ($ENV["APP_DEBUG"] ?? "false") . "\n";
+    echo "APP_URL      : " . ($ENV["APP_URL"] ?? "") . "\n\n";
+
+    echo "==== DATABASE CONFIG ====\n";
+    echo "Connection   : " . $DB["connection"] . "\n";
+
+    if ($DB["connection"] === "sqlite") {
+        echo "Database File: " . $DB["sqlite"] . "\n";
+    } else {
+        echo "Host         : " . $DB["host"] . "\n";
+        echo "Port         : " . $DB["port"] . "\n";
+        echo "User         : " . $DB["user"] . "\n";
+        echo "Pass         : " . $DB["pass"] . "\n";
+        echo "Database     : " . $DB["name"] . "\n";
+    }
+    exit;
+}
+
+// =======================================================
+// COMMAND: make:controller
+// =======================================================
+if ($cmd === "make:controller") {
+    if (!$arg) {
+        echo "❌ Nama controller tidak diberikan!\n";
+        exit;
+    }
+
+    $name = ucfirst($arg); // Nama controller dengan huruf awal kapital
+    $folder = __DIR__ . "/app/Http/Controllers";
+    if (!is_dir($folder)) mkdir($folder, 0777, true);
+
+    $file = $folder . "/{$name}.php";
+    if (file_exists($file)) {
+        echo "❌ Controller {$name}.php sudah ada!\n";
+        exit;
+    }
+
+    $template = <<<EOT
+<?php
+
+namespace App\Http\Controllers;
+
+class {$name}
+{
+    public function index()
+    {
+        echo "Hello from {$name} controller!";
+    }
+}
+EOT;
+
+    file_put_contents($file, $template);
+    echo "✔ Controller dibuat: app/Controllers/{$name}.php\n";
+    exit;
+}
+
+// =======================================================
+// COMMAND: serve
+// =======================================================
+if ($cmd === "serve") {
+
+    $host = $argv[2] ?? "127.0.0.1";
+    $port = $argv[3] ?? "8080";
+
+    $command = "php -S {$host}:{$port} -t public";
+
+    echo "🚀 Server berjalan di: http://{$host}:{$port}\n";
+    echo "Tekan CTRL+C untuk menghentikan.\n\n";
+
+    // Jalankan server PHP
+    passthru($command);
+    exit;
+}
+
+// =======================================================
+// HELP
+// =======================================================
+echo "
+Blueprint CLI Commands:
+
+  php blueprint serve
+  php blueprint make:controller UserController
+  php blueprint make:table users
+  php blueprint migrate
+  php blueprint migrate:fresh
+  php blueprint make:model User
+  php blueprint seed
+  php blueprint make:seed users
+  php blueprint config:show
+  php blueprint print
+  php blueprint rollback
+
+";
