@@ -25,22 +25,29 @@ Konfigurasi database ada di file `.env`.
 ---
 ## Migration
 **Migrasi Semua Tabel**
+
 php blueprint migrate
+
 ---
 **Reset & Migrasi Ulang**
+
 php blueprint migrate:fresh
+
 --
 **Seeder
 Buat Seeder**
 php blueprint make:seed users
 
 **Jalankan Seeder**
+
 php blueprint seed
 
 ---
 **Controller
 Buat Controller Baru**
+
 php blueprint make:controller Controller
+
 ---
 | Fungsi                   | Keterangan                            |
 | ------------------------ | ------------------------------------- |
