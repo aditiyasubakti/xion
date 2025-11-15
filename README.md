@@ -23,5 +23,5 @@ Xion adalah **PHP micro-framework** ringan yang dirancang untuk membuat aplikasi
 1. Clone repository ini:
 
 ```bash
-git clone https://github.com/username/xion.git
-cd xion
+[git clone https://github.com/username/xion.git
+](https://github.com/aditiyasubakti/xion.git)cd xion
