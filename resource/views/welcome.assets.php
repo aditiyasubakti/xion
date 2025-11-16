@@ -127,7 +127,7 @@
         <p class="subtitle">Framework super ringan dengan kecepatan seperti kilat ⚡</p>
 
         <div class="card">
-            <p>🎉 Xion berhasil dijalankan!</p>
+            <p>Xion berhasil dijalankan!</p>
             <p>Mulai kembangkan aplikasi Anda di folder <strong>/app</strong></p>
 
             <a href="#" class="btn-docs">📘 Dokumentasi</a>

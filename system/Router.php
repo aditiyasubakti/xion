@@ -181,7 +181,8 @@ class Router
             return call_user_func(self::$fallback);
         }
         http_response_code(404);
-        echo "404 Not Found";
+        // echo "404 Not Found";
+        require_once "404.php";
     }
     public static function setRouteName($method, $route, $name)
     {
