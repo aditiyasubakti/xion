@@ -23,6 +23,7 @@ $cmd = $argv[1] ?? null;
 $arg = trim(implode(" ", array_slice($argv, 2)));
 
 
+
 // =======================================================
 // FUNCTION: CONNECT DB
 // =======================================================
@@ -393,6 +394,97 @@ if ($cmd === "serve") {
     passthru($command);
     exit;
 }
+// =======================================================
+// COMMAND: rollback (hapus tabel terakhir)
+// =======================================================
+if ($cmd === "rollback") {
+    $conn = db();
+
+    $migrations = load_migrations();
+    if (empty($migrations)) {
+        echo "❌ Tidak ada migration!\n";
+        exit;
+    }
+
+    // Ambil file migrasi terakhir (sorted)
+    $files = array_keys($migrations);
+    sort($files);
+    $last = end($files);
+
+    echo "⚠ Rollback migration: $last\n";
+
+    // Matikan foreign key (MySQL only)
+    if ($DB["connection"] !== "sqlite") {
+        $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+    }
+
+    $sql = "DROP TABLE IF EXISTS `$last`";
+
+    $ok = ($DB["connection"] === "sqlite")
+        ? $conn->exec($sql)
+        : $conn->query($sql);
+
+    if ($ok) {
+        echo "✔ Table `$last` berhasil dihapus.\n";
+    } else {
+        echo "❌ Gagal rollback tabel `$last`.\n";
+    }
+
+    if ($DB["connection"] !== "sqlite") {
+        $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+    }
+    exit;
+}
+// =======================================================
+// COMMAND: drop (hapus seluruh DATABASE)
+// =======================================================
+if ($cmd === "drop") {
+
+    global $DB;
+
+    echo "⚠ PERINGATAN!\n";
+    echo "Command ini akan MENGHAPUS SELURUH DATABASE: {$DB['name']}\n";
+    echo "Ketik 'yes' untuk melanjutkan: ";
+
+    $confirm = trim(fgets(STDIN));
+
+     if (!in_array(strtolower($confirm), ["yes", "y"])) {
+        echo "❌ Dibatalkan.\n";
+        exit;
+    }
+    echo "\n🗑 Menghapus database...\n";
+    // SQLite Mode
+    if ($DB["connection"] === "sqlite") {
+        $path = __DIR__ . "/database/" . $DB["sqlite"];
+
+        if (file_exists($path)) {
+            unlink($path);
+            echo "✔ SQLite database '{$DB['sqlite']}' telah dihapus.\n";
+        } else {
+            echo "❌ File SQLite tidak ditemukan.\n";
+        }
+        exit;
+    }
+
+    // MySQL Mode
+    $mysqli = new mysqli($DB["host"], $DB["user"], $DB["pass"], "", $DB["port"]);
+    if ($mysqli->connect_error) {
+        die("❌ Koneksi gagal: " . $mysqli->connect_error);
+    }
+
+    $dbName = $DB["name"];
+
+    $sql = "DROP DATABASE IF EXISTS `$dbName`";
+
+    if ($mysqli->query($sql)) {
+        echo "✔ Database `$dbName` berhasil dihapus.\n";
+    } else {
+        echo "❌ Gagal menghapus database `$dbName`: " . $mysqli->error . "\n";
+    }
+
+    exit;
+}
+
 
 // =======================================================
 // HELP
@@ -412,5 +504,7 @@ Blueprint CLI Commands:
   php blueprint config:show
   php blueprint print
   php blueprint rollback
+  php blueprint drop
+
 
 ";
