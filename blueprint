@@ -19,8 +19,9 @@ $DB = [
 // =======================================================
 // AMBIL ARGUMEN CLI
 // =======================================================
-$cmd = $argv[1] ?? null;   // Perintah CLI
-$arg = $argv[2] ?? null;   // Argumen tambahan (misal nama tabel)
+$cmd = $argv[1] ?? null;
+$arg = trim(implode(" ", array_slice($argv, 2)));
+
 
 // =======================================================
 // FUNCTION: CONNECT DB
@@ -88,23 +89,106 @@ if ($cmd === "make:table") {
 
     $file = $folder . "/{$name}.php";
     if (file_exists($file)) {
-        echo "❌ File {$name}.php sudah ada!\n";
+        echo "❌ Migration {$name}.php sudah ada!\n";
         exit;
     }
 
     $template = <<<EOT
 <?php
 
-return [
-    "id" => "INTEGER PRIMARY KEY AUTOINCREMENT",
-    "nama_field" => "TEXT"
-];
+use Core\Schema;
+
+return function (Schema \$schema) {
+
+    \$schema->create("$name", function (\$table) {
+        \$table->id();
+        \$table->string("nama");
+        \$table->string("email")->unique();
+        \$table->string("passwrd");
+        \$table->timestamps();
+    });
+
+};
 EOT;
 
     file_put_contents($file, $template);
-    echo "✔ Migration dibuat: database/migration/{$name}.php\n";
+    echo "✔ Migration dibuat (Blueprint): database/migration/{$name}.php\n";
     exit;
 }
+
+
+// =======================================================
+// COMMAND: make:relasi (AUTO FOREIGN KEY + CASCADE)
+// =======================================================
+if ($cmd === "make:relasi") {
+
+    if (!$arg) {
+        echo "❌ Format:\nphp blueprint make:relasi users to orders\n";
+        exit;
+    }
+
+    $parts = explode(" ", $arg);
+    if (count($parts) !== 3 || strtolower($parts[1]) !== "to") {
+        die("❌ Format salah! Gunakan: php blueprint make:relasi users to orders\n");
+    }
+
+    $table1 = strtolower($parts[0]);
+    $table2 = strtolower($parts[2]);
+
+    $folder = __DIR__ . "/database/migration";
+    if (!is_dir($folder)) mkdir($folder);
+
+    // FILE 1
+    $file1 = $folder . "/{$table1}.php";
+    if (!file_exists($file1)) {
+        file_put_contents($file1, <<<PHP
+<?php
+
+use Core\Schema;
+
+return function (Schema \$schema) {
+
+    \$schema->create("$table1", function (\$table) {
+        \$table->id();
+        \$table->string("name");
+        \$table->string("email")->unique();
+        \$table->string("password");
+        \$table->timestamps();
+    });
+
+};
+PHP);
+        echo "✔ Created $table1.php\n";
+    }
+
+    // FILE 2 (ADA RELASI + CASCADE)
+    $file2 = $folder . "/{$table2}.php";
+    if (!file_exists($file2)) {
+        file_put_contents($file2, <<<PHP
+<?php
+
+use Core\Schema;
+
+return function (Schema \$schema) {
+
+    \$schema->create("$table2", function (\$table) {
+        \$table->id();
+        \$table->integer("{$table1}_id");
+        \$table->foreign("{$table1}_id", "id", "$table1"); // <── RELASI OTOMATIS
+        \$table->string("produk");
+        \$table->integer("harga");
+        \$table->timestamps();
+    });
+
+};
+PHP);
+        echo "✔ Created $table2.php (with foreign key)\n";
+    }
+
+    echo "\n🎉 Relasi berhasil dibuat $table1 → $table2\n";
+    exit;
+}
+
 
 // =======================================================
 // COMMAND: migrate
@@ -113,17 +197,16 @@ if ($cmd === "migrate") {
     $conn = db();
     $tables = load_migrations();
 
-    foreach ($tables as $table => $fields) {
-        $columns = [];
-        foreach ($fields as $col => $type) {
-            $columns[] = "`$col` $type";
+    require_once __DIR__ . "/system/Schema.php";
+    $schema = new \Core\Schema($conn);
+
+    foreach ($tables as $name => $callback) {
+        if (is_callable($callback)) {
+            $callback($schema);
+            echo "✔ Migrated: $name\n";
+        } else {
+            echo "❌ Migration $name tidak valid!\n";
         }
-
-        $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(",", $columns) . ")";
-
-        $ok = ($DB["connection"] === "sqlite") ? $conn->exec($sql) : $conn->query($sql);
-
-        echo $ok ? "✔ Migrated: $table\n" : "❌ Error migrate $table\n";
     }
     exit;
 }
@@ -137,18 +220,24 @@ if ($cmd === "migrate:fresh") {
 
     echo "⚠ Menghapus semua tabel...\n";
 
+    if ($DB["connection"] !== "sqlite") {
+        $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+    }
+
     foreach ($tables as $table => $f) {
-        $ok = ($DB["connection"] === "sqlite") ?
-            $conn->exec("DROP TABLE IF EXISTS `$table`") :
-            $conn->query("DROP TABLE IF EXISTS `$table`");
+        $ok = ($DB["connection"] === "sqlite")
+            ? $conn->exec("DROP TABLE IF EXISTS `$table`")
+            : $conn->query("DROP TABLE IF EXISTS `$table`");
 
         echo $ok ? "✔ Dropped: $table\n" : "❌ Gagal drop $table\n";
     }
 
-    echo "\n🔄 Migrating ulang...\n";
+    if ($DB["connection"] !== "sqlite") {
+        $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+    }
 
-    $argv[1] = "migrate";
-    include __FILE__;
+    echo "\n🔄 Migrating ulang...\n";
+    passthru("php blueprint migrate");
     exit;
 }
 
@@ -171,17 +260,22 @@ if ($cmd === "make:seed") {
         exit;
     }
 
-    $template = <<<EOT
-<?php
+   $template = <<<EOT
+    <?php
+    return [
+        [
+            "id" => 1,
+            "nama" => "lukman",
+            "username"=>"lukman1",
+            "email" => "lukman@gmail.com",
+            "password"=>"1234567890",
+            "role"=>"user",
+            "created_at" => date("Y-m-d H:i:s"),
+            "updated_at" => date("Y-m-d H:i:s")
+        ]
+    ];
 
-return [
-    [
-        "id" => 1,
-        "nama" => "lukman",
-        "email" => "lukman@gmail.com"
-    ]
-];
-EOT;
+    EOT;
 
     file_put_contents($file, $template);
     echo "✔ Seeder dibuat: database/seeders/{$name}.php\n";
@@ -309,6 +403,7 @@ Blueprint CLI Commands:
   php blueprint serve
   php blueprint make:controller UserController
   php blueprint make:table users
+  php blueprint make:relasi users to orders
   php blueprint migrate
   php blueprint migrate:fresh
   php blueprint make:model User

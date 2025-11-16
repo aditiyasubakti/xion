@@ -1,9 +1,15 @@
 <?php
 
-return [
-    "id" => "INT AUTO_INCREMENT PRIMARY KEY",
-    "nama" => "VARCHAR(255)",
-    "jenis_kelamin" => "VARCHAR(255)",
-    "biodata" => "VARCHAR(255)",
+use Core\Schema;
 
-];
+return function (Schema $schema) {
+
+    $schema->create("customer", function ($table) {
+        $table->id();
+        $table->string("name");
+        $table->string("email")->unique();
+        $table->string("password");
+        $table->timestamps();
+    });
+
+};

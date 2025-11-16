@@ -1,21 +1,13 @@
 <?php
-
 return [
     [
         "id" => 1,
-        "nama" => "aditiya",
-        "username"=>"aditiya12",
-        "email"=>"aditiyasubakti@gmail.com",
-        "password"=>"123456789",
-        "role"=>"user"
-    ],
-    [
-        "id" => 2,
         "nama" => "lukman",
-        "username"=>"lukman12",
-        "email"=>"lukman@gmail.com",
-        "password"=>"12345678",
-        "role"=>"user"
+        "username"=>"lukman1",
+        "email" => "lukman@gmail.com",
+        "password"=>"1234567890",
+        "role"=>"user",
+        "created_at" => date("Y-m-d H:i:s"),
+        "updated_at" => date("Y-m-d H:i:s"),
     ]
-
 ];
