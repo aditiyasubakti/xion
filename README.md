@@ -69,6 +69,6 @@ php blueprint make:table users
 ```bash
 git clone https://github.com/aditiyasubakti/xion.git
 cd xion
-
+```
 ---
 <img width="1911" height="886" alt="Screenshot 2025-11-17 001149" src="https://github.com/user-attachments/assets/0ec046f1-a367-4ac2-9801-36e2677a2ddd" />
