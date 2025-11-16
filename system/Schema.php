@@ -4,69 +4,69 @@ namespace Core;
 class TableBlueprint
 {
     public $fields = [];
+    public $foreignKeys = [];
+    private $lastColumn = null;
 
     public function id()
     {
         $this->fields['id'] = "INT AUTO_INCREMENT PRIMARY KEY";
+        $this->lastColumn = "id";
+        return $this;
     }
 
     public function string($name, $length = 255)
     {
         $this->fields[$name] = "VARCHAR($length)";
+        $this->lastColumn = $name;
         return $this;
     }
 
     public function text($name)
     {
         $this->fields[$name] = "TEXT";
+        $this->lastColumn = $name;
         return $this;
     }
 
     public function integer($name)
     {
         $this->fields[$name] = "INT";
+        $this->lastColumn = $name;
         return $this;
     }
 
-  public function unique($name = null)
-{
-    // Jika unique() dipanggil tanpa parameter → ambil kolom terakhir
-    if ($name === null) {
-
-        // Ambil key kolom terakhir
-        end($this->fields);
-        $name = key($this->fields);
-
-        // Kalau tetap null
+    public function unique($name = null)
+    {
         if ($name === null) {
-            throw new \Exception("unique() dipanggil tapi tidak ada kolom.");
+            $name = $this->lastColumn;
         }
+
+        if ($name === null) {
+            throw new \Exception("unique() dipanggil tanpa kolom.");
+        }
+
+        $this->fields[$name] .= " UNIQUE";
+        return $this;
     }
 
-    // Tambahkan UNIQUE pada definisi kolom
-    $this->fields[$name] .= " UNIQUE";
-    return $this;
-}
-
-
-    // ============================
-    // FOREIGN KEY BUILDER
-    // ============================
-    public function foreign($column, $ref, $on)
+    public function foreign($column, $refColumn, $refTable)
     {
-        $this->fields["_fk_$column"] = [
-            "column" => $column,
-            "ref"    => $ref,
-            "on"     => $on
+        $this->foreignKeys[] = [
+            "column"   => $column,
+            "refTable" => $refTable,
+            "refColumn"=> $refColumn
         ];
+        return $this;
     }
 
     public function timestamps()
     {
         $this->fields["created_at"] = "DATETIME";
         $this->fields["updated_at"] = "DATETIME";
+        return $this;
     }
 }
+
 
 class Schema
 {
@@ -83,25 +83,19 @@ class Schema
         $callback($blue);
 
         $columns = [];
-        $foreignKeys = [];
 
         foreach ($blue->fields as $col => $type) {
-
-            if (is_array($type)) {
-                // Handle Foreign Key
-                $foreignKeys[] =
-                    "FOREIGN KEY (`{$type['column']}`) REFERENCES {$type['on']}({$type['ref']}) 
-                     ON DELETE CASCADE ON UPDATE CASCADE";
-            } else {
-                $columns[] = "`$col` $type";
-            }
+            $columns[] = "`$col` $type";
         }
 
-        if (!empty($foreignKeys)) {
-            $columns = array_merge($columns, $foreignKeys);
+        foreach ($blue->foreignKeys as $fk) {
+            $columns[] =
+                "FOREIGN KEY (`{$fk['column']}`) REFERENCES `{$fk['refTable']}`(`{$fk['refColumn']}`)
+                 ON DELETE CASCADE 
+                 ON UPDATE CASCADE";
         }
 
-        $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(",", $columns) . ")";
+        $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(",", $columns) . ") ENGINE=InnoDB";
 
         return $this->conn->query($sql);
     }
