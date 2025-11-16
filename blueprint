@@ -23,7 +23,6 @@ $cmd = $argv[1] ?? null;
 $arg = trim(implode(" ", array_slice($argv, 2)));
 
 
-
 // =======================================================
 // FUNCTION: CONNECT DB
 // =======================================================
@@ -453,6 +452,7 @@ if ($cmd === "drop") {
         exit;
     }
     echo "\n🗑 Menghapus database...\n";
+
     // SQLite Mode
     if ($DB["connection"] === "sqlite") {
         $path = __DIR__ . "/database/" . $DB["sqlite"];
