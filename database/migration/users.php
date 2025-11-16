@@ -8,7 +8,7 @@ return function (Schema $schema) {
         $table->id();
         $table->string("nama");
         $table->string("username");
-        $table->string("email");
+        $table->string("email")->unique();
         $table->string("password");
         $table->string("role");
         $table->timestamps();
