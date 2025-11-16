@@ -11,7 +11,6 @@ function renderError($type, $message, $file, $line)
 <meta charset="UTF-8">
 <title>Xion Debug Engine</title>
 <link rel="shortcut icon" type="text/css" href="favicon.ico">
-<!-- Google Font -->
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 
 <style>
@@ -30,7 +29,6 @@ function renderError($type, $message, $file, $line)
         animation: fadeIn 0.7s ease;
     }
 
-    /* Title */
     .title {
         font-size: 32px;
         font-weight: 700;
@@ -41,7 +39,6 @@ function renderError($type, $message, $file, $line)
         letter-spacing: 2px;
     }
 
-    /* Error box */
     .info-box {
         background: rgba(255, 60, 60, 0.08);
         border: 1px solid rgba(255, 60, 60, 0.3);
@@ -58,7 +55,6 @@ function renderError($type, $message, $file, $line)
         color: #ff9f9f;
     }
 
-    /* Code Snippet Box */
     .snippet-box {
         background: rgba(15, 15, 15, 0.7);
         border: 1px solid #222;
@@ -119,7 +115,6 @@ function renderError($type, $message, $file, $line)
         color: #555;
     }
 
-    /* Fade effect */
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }

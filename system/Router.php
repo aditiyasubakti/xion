@@ -1,5 +1,5 @@
-<!-- system/Router.php -->
 <?php
+
 class Router
 {
     private static $routes = [];
@@ -9,39 +9,36 @@ class Router
     private static $fallback = null;
 
     // ------------------------------------------------
+    // NORMALISASI PATH
+    // ------------------------------------------------
+    private static function normalize($path)
+    {
+        if ($path === '' || $path === null) return '/';
+
+        $path = '/' . ltrim($path, '/');
+        return rtrim($path, '/') ?: '/';
+    }
+
+    // ------------------------------------------------
     // REGISTER ROUTES
     // ------------------------------------------------
     public static function add($method, $route, $callback)
     {
-        $fullRoute = self::$groupPrefix . $route;
+        $route = self::normalize($route);
+        $fullRoute = self::normalize(self::$groupPrefix . $route);
 
         self::$routes[$method][$fullRoute] = [
-            'callback' => $callback,
+            'callback'    => $callback,
             'middlewares' => self::$currentMiddlewares
         ];
 
         return new RouterRegister($method, $fullRoute);
     }
 
-    public static function get($route, $callback)
-    {
-        return self::add('GET', $route, $callback);
-    }
-
-    public static function post($route, $callback)
-    {
-        return self::add('POST', $route, $callback);
-    }
-
-    public static function put($route, $callback)
-    {
-        return self::add('PUT', $route, $callback);
-    }
-
-    public static function delete($route, $callback)
-    {
-        return self::add('DELETE', $route, $callback);
-    }
+    public static function get($route, $callback)    { return self::add('GET',    $route, $callback); }
+    public static function post($route, $callback)   { return self::add('POST',   $route, $callback); }
+    public static function put($route, $callback)    { return self::add('PUT',    $route, $callback); }
+    public static function delete($route, $callback) { return self::add('DELETE', $route, $callback); }
 
     // ------------------------------------------------
     // ROUTE GROUP
@@ -51,7 +48,7 @@ class Router
         $oldPrefix = self::$groupPrefix;
         $oldMiddle = self::$currentMiddlewares;
 
-        self::$groupPrefix .= $prefix;
+        self::$groupPrefix = self::normalize(self::$groupPrefix . $prefix);
 
         call_user_func($callback);
 
@@ -60,19 +57,38 @@ class Router
     }
 
     // ------------------------------------------------
-    // MIDDLEWARE
+    // MIDDLEWARE GROUPING
     // ------------------------------------------------
     public static function middleware($middlewares)
     {
         $middlewares = is_array($middlewares) ? $middlewares : [$middlewares];
 
-        self::$currentMiddlewares = $middlewares;
-        return new class {
+        $old = self::$currentMiddlewares;
+
+        // Tambahkan middleware baru (cumulative)
+        self::$currentMiddlewares = array_merge(self::$currentMiddlewares, $middlewares);
+
+        // Anonymous class untuk middleware group
+        return new class($old) {
+            private $old;
+            public function __construct($old)
+            {
+                $this->old = $old;
+            }
+
             public function group($prefix, $callback)
             {
-                Router::group($prefix, $callback);
+                Router::group($prefix, function () use ($callback) {
+                    call_user_func($callback);
+                    Router::restoreMiddlewares($this->old);
+                });
             }
         };
+    }
+
+    public static function restoreMiddlewares($list)
+    {
+        self::$currentMiddlewares = $list;
     }
 
     public static function registerMiddleware($name, $callback)
@@ -89,111 +105,106 @@ class Router
     }
 
     // ------------------------------------------------
-    // RUN ROUTING
+    // RUN ROUTER
     // ------------------------------------------------
     public static function run()
     {
         $method = $_SERVER['REQUEST_METHOD'];
-        
         $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-
         $config = require __DIR__ . '/../config/app.php';
         $base = rtrim($config['base_url'], '/');
-
-        if (strpos($path, $base) === 0) {
+        if ($base && strpos($path, $base) === 0) {
             $path = substr($path, strlen($base));
         }
-
-        if ($path === '') $path = '/';
-
+        $path = self::normalize($path);
         if (!isset(self::$routes[$method])) {
-            self::throw404();
-            return;
+            return self::throw404();
         }
-
         foreach (self::$routes[$method] as $route => $data) {
-
             $pattern = preg_replace('#\{([^}]+)\}#', '([^/]+)', $route);
+            $pattern = '#^' . $pattern . '$#';
 
-            if (preg_match('#^' . $pattern . '$#', $path, $matches)) {
-
+            if (preg_match($pattern, $path, $matches)) {
                 array_shift($matches);
-
-                // Jalankan middleware
                 foreach ($data['middlewares'] as $mw) {
                     if (isset(self::$middlewares[$mw])) {
-                        $res = call_user_func(self::$middlewares[$mw]);
-                        if ($res === false) return;
+                        $result = call_user_func(self::$middlewares[$mw]);
+                        if ($result === false) return;
                     }
                 }
-
-                // Callback
-                self::call($data['callback'], $matches);
-                return;
+                return self::call($data['callback'], $matches);
             }
         }
-
         self::throw404();
     }
 
     // ------------------------------------------------
-    // CALLABLE HANDLER
+    // CALLABLE HANDLER (CLOSURE ATAU CONTROLLER)
     // ------------------------------------------------
-private static function call($callback, $params)
-{
-    if (is_string($callback) && strpos($callback, '@') !== false) {
-        list($controller, $method) = explode('@', $callback);
+    private static function call($callback, $params)
+    {
+        if (is_string($callback) && strpos($callback, '@') !== false) {
 
-        // Namespace default untuk semua controller
-        $namespace = "App\\Http\\Controllers\\";
-        $fullClass = $namespace . $controller;
+            list($controller, $method) = explode('@', $callback);
 
-        // require file controller
-        require_once __DIR__ . '/../app/Http/Controllers/' . $controller . '.php';
+            $namespace = "App\\Http\\Controllers\\";
+            $fullClass = $namespace . $controller;
+            $file = __DIR__ . '/../app/Http/Controllers/' . $controller . '.php';
 
-        if (!class_exists($fullClass)) {
-            die("❌ Controller $fullClass tidak ditemukan!");
+            if (!file_exists($file)) {
+                http_response_code(500);
+                die("File controller tidak ditemukan: $file");
+            }
+            require_once $file;
+
+            if (!class_exists($fullClass)) {
+                http_response_code(500);
+                die(" Class controller tidak ditemukan: $fullClass");
+            }
+
+            if (!method_exists($fullClass, $method)) {
+                http_response_code(500);
+                die("Method $method tidak ditemukan pada $fullClass");
+            }
+            $obj = new $fullClass;
+            return call_user_func_array([$obj, $method], $params);
         }
-
-        $obj = new $fullClass;
-        call_user_func_array([$obj, $method], $params);
-        return;
+        return call_user_func_array($callback, $params);
     }
 
-    call_user_func_array($callback, $params);
-}
-
-
+    // ------------------------------------------------
+    // ERROR 404
+    // ------------------------------------------------
     private static function throw404()
     {
         if (self::$fallback) {
-            call_user_func(self::$fallback);
-            return;
+            return call_user_func(self::$fallback);
         }
-
         http_response_code(404);
         echo "404 Not Found";
     }
+    public static function setRouteName($method, $route, $name)
+    {
+        self::$routes[$method][$route]['name'] = $name;
+    }
+
 }
-
-
 // -----------------------------------------------------------
-// SUPPORT CLASS FOR NAMED ROUTES (OPTIONAL)
+// HANDLE ROUTE NAME (OPTIONAL)
 // -----------------------------------------------------------
 class RouterRegister
 {
     private $method;
     private $route;
-
     public function __construct($method, $route)
     {
         $this->method = $method;
         $this->route = $route;
     }
+   public function name($name)
+{
+    Router::setRouteName($this->method, $this->route, $name);
+    return $this;
+}
 
-    public function name($name)
-    {
-        Router::$routes[$this->method][$this->route]['name'] = $name;
-        return $this;
-    }
 }
