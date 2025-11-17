@@ -26,28 +26,28 @@ Konfigurasi database ada di file `.env`.
 ## Migration
 **Migrasi Semua Tabel**
 
-php blueprint migrate
+php xion migrate
 
 ---
 **Reset & Migrasi Ulang**
 
-php blueprint migrate:fresh
+php xion migrate:fresh
 
 ---
 
 **Seeder
 Buat Seeder**
-php blueprint make:seed users
+php xion make:seed users
 
 **Jalankan Seeder**
 
-php blueprint seed
+php xion seed
 
 ---
 **Controller
 Buat Controller Baru**
 
-php blueprint make:controller Controller
+php xion make:controller Controller
 
 ---
 | Fungsi                   | Keterangan                            |
@@ -61,7 +61,8 @@ php blueprint make:controller Controller
 
 ### Buat Tabel
 ```bash
-php blueprint make:table users
+php xion make:table users
+php xion make:relasi users to order
 
 ## Instalasi
 
