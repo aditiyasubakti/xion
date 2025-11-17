@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>welcome xion</title>
+    @csrf
     <link rel="shortcut icon" type="text/css" href="favicon.ico">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
@@ -122,6 +123,10 @@
         setInterval(createParticle, 120);
     </script>
 
+<form action="">
+        @csrf
+
+</form>
     <div class="content">
         <h1>Welcome to <span>Xion</span></h1>
         <p class="subtitle">Framework super ringan dengan kecepatan seperti kilat ⚡</p>

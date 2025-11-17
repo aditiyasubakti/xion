@@ -1,4 +1,3 @@
-<!-- system/View.php -->
 <?php
 
 class View
@@ -13,6 +12,20 @@ class View
         }
 
         extract($data);
+        ob_start();
         require $path;
+        $content = ob_get_clean();
+
+    
+        $content = str_replace(
+            "@csrf",
+            "<input type='hidden' name='_csrf' value='".\Core\Csrf::token()."'>",
+            $content
+        );
+
+        // ================
+        // 3. RETURN OUTPUT
+        // ================
+        echo $content;
     }
 }

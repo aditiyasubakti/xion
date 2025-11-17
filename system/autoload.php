@@ -3,6 +3,7 @@
 require_once __DIR__ . "/DB.php";
 require_once __DIR__ . "/env.php";
 require_once __DIR__ . "/error.php";
+require_once __DIR__ . "/Core/helpers.php";
 
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
     renderError("PHP Error", $errstr, $errfile, $errline);

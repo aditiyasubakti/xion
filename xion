@@ -193,7 +193,7 @@ if ($cmd === "migrate:fresh") {
         $ok = ($DB["connection"] === "sqlite")
             ? $conn->exec("DROP TABLE IF EXISTS `$table`")
             : $conn->query("DROP TABLE IF EXISTS `$table`");
-        echo $ok ? "✔ Dropped: $table\n" : "❌ Gagal drop $table\n";
+        echo $ok ? "✔ Dropped: $table\n" : " Gagal drop $table\n";
     }
     if ($DB["connection"] !== "sqlite") {
         $conn->query("SET FOREIGN_KEY_CHECKS = 1");
@@ -310,7 +310,7 @@ if ($cmd === "make:controller") {
 <?php
 
 namespace App\Http\Controllers;
-
+use View;
 class {$name}
 {
     public function index()
@@ -437,19 +437,19 @@ PHP;
 // HELP
 // =======================================================
 echo "
-Blueprint CLI Commands:
+Xion CLI Commands:
 
-  php blueprint serve
-  php blueprint make:controller UserController
-  php blueprint make:table users
-  php blueprint make:relasi users to orders
-  php blueprint migrate
-  php blueprint migrate:fresh
-  php blueprint make:model User
-  php blueprint seed
-  php blueprint make:seed users
-  php blueprint config:show
-  php blueprint print
-  php blueprint rollback
-  php blueprint drop
+  php xion serve
+  php xion make:controller UserController
+  php xion make:table users
+  php xion make:relasi users to orders
+  php xion migrate
+  php xion migrate:fresh
+  php xion make:model User
+  php xion seed
+  php xion make:seed users
+  php xion config:show
+  php xion print
+  php xion rollback
+  php xion drop
 ";
