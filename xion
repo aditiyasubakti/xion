@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . "/system/env.php";
 $ENV = loadEnv(".env");
+
 // =======================================================
 // CONFIG DATABASE FROM ENV
 // =======================================================
@@ -19,298 +20,450 @@ $DB = [
 // =======================================================
 $cmd = $argv[1] ?? null;
 $arg = trim(implode(" ", array_slice($argv, 2)));
+
+
 // =======================================================
-// FUNCTION: CONNECT DB
+// UTIL: Auto Timestamp Migration Name
+// =======================================================
+function makeMigrationName($table)
+{
+    $time = date("Ymd_His");
+    return "{$time}_create_{$table}.php";
+}
+
+
+// =======================================================
+// CONNECT DB
 // =======================================================
 function db()
 {
     global $DB;
+
     if ($DB["connection"] === "sqlite") {
         $path = __DIR__ . "/database/" . $DB["sqlite"];
-        if (!file_exists(dirname($path))) {
-            mkdir(dirname($path), 0777, true);
-        }
+        if (!file_exists(dirname($path))) mkdir(dirname($path), 0777, true);
         $conn = new SQLite3($path);
-        if (!$conn) die(" Gagal koneksi SQLite!\n");
+        if (!$conn) die("Gagal koneksi SQLite!\n");
         return $conn;
     }
+
     $mysqli = new mysqli($DB["host"], $DB["user"], $DB["pass"], "", $DB["port"]);
-    if ($mysqli->connect_error) die(" Koneksi gagal: " . $mysqli->connect_error);
+    if ($mysqli->connect_error) die("Koneksi gagal: " . $mysqli->connect_error);
+
     $mysqli->query("CREATE DATABASE IF NOT EXISTS `{$DB['name']}`");
     $mysqli->select_db($DB["name"]);
     return $mysqli;
 }
+
+
 // =======================================================
-// LOAD MIGRATIONS
+// LOAD MIGRATIONS (diurutkan berdasarkan nama file)
 // =======================================================
 function load_migrations()
 {
     $folder = __DIR__ . "/database/migration";
     if (!is_dir($folder)) return [];
+
     $files = scandir($folder);
-    $tables = [];
+
+    $migrations = [];
+
     foreach ($files as $file) {
-        if (pathinfo($file, PATHINFO_EXTENSION) === "php") {
-            $tables[pathinfo($file, PATHINFO_FILENAME)] = include $folder . "/" . $file;
-        }
+        if (pathinfo($file, PATHINFO_EXTENSION) !== "php") continue;
+
+        $migrations[$file] = include $folder . "/" . $file;
     }
-    return $tables;
+
+    // URUTKAN BERDASARKAN NAMA FILE (timestamp)
+    ksort($migrations, SORT_STRING);
+
+    return $migrations;
 }
 
+
+
 // =======================================================
-// COMMAND: make:table
+// make:table
 // =======================================================
 if ($cmd === "make:table") {
-    if (!$arg) {
-        echo "Nama tabel tidak diberikan!\n";
-        exit;
-    }
-    $name = strtolower($arg);
+
+    if (!$arg) die("Nama tabel tidak diberikan!\n");
+
+    $table = strtolower($arg);
     $folder = __DIR__ . "/database/migration";
+
     if (!is_dir($folder)) mkdir($folder, 0777, true);
-    $file = $folder . "/{$name}.php";
-    if (file_exists($file)) {
-        echo "Migration {$name}.php sudah ada!\n";
-        exit;
-    }
-    $template = <<<EOT
+
+    $filename = makeMigrationName($table);
+    $file = $folder . "/$filename";
+
+    $template = <<<PHP
 <?php
 
 use Core\Schema;
 
 return function (Schema \$schema) {
 
-    \$schema->create("$name", function (\$table) {
+    \$schema->create("$table", function (\$table) {
         \$table->id();
         \$table->string("nama");
-        \$table->string("email")->unique();
-        \$table->string("passwrd");
-        \$table->timestamps();
-    });
-
-};
-EOT;
-    file_put_contents($file, $template);
-    echo "✔ Migration dibuat (Blueprint): database/migration/{$name}.php\n";
-    exit;
-}
-
-// =======================================================
-// COMMAND: make:relasi (AUTO FOREIGN KEY + CASCADE)
-// =======================================================
-if ($cmd === "make:relasi") {
-    if (!$arg) {
-        echo "Format:\nphp blueprint make:relasi users to orders\n";
-        exit;
-    }
-    $parts = explode(" ", $arg);
-    if (count($parts) !== 3 || strtolower($parts[1]) !== "to") {
-        die("Format salah! Gunakan: php blueprint make:relasi users to orders\n");
-    }
-    $table1 = strtolower($parts[0]);
-    $table2 = strtolower($parts[2]);
-    $folder = __DIR__ . "/database/migration";
-    if (!is_dir($folder)) mkdir($folder);
-    // FILE 1
-    $file1 = $folder . "/{$table1}.php";
-    if (!file_exists($file1)) {
-        file_put_contents($file1, <<<PHP
-<?php
-
-use Core\Schema;
-
-return function (Schema \$schema) {
-
-    \$schema->create("$table1", function (\$table) {
-        \$table->id();
-        \$table->string("name");
         \$table->string("email")->unique();
         \$table->string("password");
         \$table->timestamps();
     });
 
 };
-PHP);
-        echo "✔ Created $table1.php\n";
+PHP;
+
+    file_put_contents($file, $template);
+    echo "✔ Migration dibuat: database/migration/$filename\n";
+    exit;
+}
+
+
+
+// =======================================================
+// make:relasi
+// =======================================================
+if ($cmd === "make:relasi") {
+
+    if (!$arg) die("Format: php xion make:relasi users to orders\n");
+
+    $parts = explode(" ", $arg);
+
+    if (count($parts) !== 3 || strtolower($parts[1]) !== "to") {
+        die("Format salah! Gunakan: php xion make:relasi users to orders\n");
     }
-    // FILE 2 (ADA RELASI + CASCADE)
-    $file2 = $folder . "/{$table2}.php";
-    if (!file_exists($file2)) {
-        file_put_contents($file2, <<<PHP
+
+    $parent = strtolower($parts[0]);
+    $child  = strtolower($parts[2]);
+
+    $folder = __DIR__ . "/database/migration";
+    if (!is_dir($folder)) mkdir($folder);
+
+    $filename = makeMigrationName($child);
+    $file = $folder . "/$filename";
+
+    $template = <<<PHP
 <?php
 
 use Core\Schema;
 
 return function (Schema \$schema) {
 
-    \$schema->create("$table2", function (\$table) {
+    \$schema->create("$child", function (\$table) {
+
         \$table->id();
-        \$table->integer("{$table1}_id");
-        \$table->foreign("{$table1}_id", "id", "$table1"); // <── RELASI OTOMATIS
+
+        \$table->integer("{$parent}_id")
+              ->references("id")
+              ->on("$parent")
+              ->onUpdateDelete("CASCADE");
+
         \$table->string("produk");
         \$table->integer("harga");
         \$table->timestamps();
     });
 
 };
-PHP);
-        echo "✔ Created $table2.php (with foreign key)\n";
-    }
-    echo "\nRelasi berhasil dibuat $table1 → $table2\n";
+PHP;
+
+    file_put_contents($file, $template);
+
+    echo "✔ Migration relasi dibuat: database/migration/$filename\n";
+    echo "  Relasi: $child.{$parent}_id → $parent.id\n";
     exit;
 }
 
+
+
 // =======================================================
-// COMMAND: migrate
+// migrate
+// =======================================================
+// =======================================================
+// migrate (2-phase system)
 // =======================================================
 if ($cmd === "migrate") {
+
     $conn = db();
     $tables = load_migrations();
+
     require_once __DIR__ . "/system/Schema.php";
+
+    echo "🔧 Phase 1: Create all tables...\n";
+
     $schema = new \Core\Schema($conn);
-    foreach ($tables as $name => $callback) {
-        if (is_callable($callback)) {
+
+    // prepare FK collector (external array)
+    $fkJobs = [];
+
+    // start collecting FK (Schema will push into $fkJobs by reference)
+    $schema->startCollectingFK($fkJobs);
+
+    // PHASE 1: create all tables (only columns)
+    foreach ($tables as $filename => $callback) {
+
+        if (!is_callable($callback)) {
+            echo "❌ Migration $filename tidak valid!\n";
+            continue;
+        }
+
+        try {
             $callback($schema);
-            echo "✔ Migrated: $name\n";
-        } else {
-            echo "Migration $name tidak valid!\n";
+            echo "✔ Table migrated: $filename\n";
+        } catch (\Exception $e) {
+            echo "❌ Error migrating $filename: " . $e->getMessage() . "\n";
         }
     }
+
+    // stop collecting (do not clear $fkJobs)
+    $schema->stopCollectingFK();
+
+
+    // PHASE 2: Apply all FK collected
+        echo "🔗 Phase 2: Apply foreign keys...\n";
+
+    if (empty($fkJobs)) {
+        echo "⚠ No foreign keys collected.\n";
+    } else {
+
+        foreach ($fkJobs as $fk) {
+
+            $table     = $fk['table'];
+            $column    = $fk['column'];
+            $refTable  = $fk['refTable'];
+            $refColumn = $fk['refColumn'];
+            $onUpdate  = $fk['onUpdate'];
+            $onDelete  = $fk['onDelete'];
+
+            // CEK FOREIGN KEY SUDAH ADA
+            if ($schema->foreignKeyExists($table, $column)) {
+                echo "✔ Foreign key exists: $table.$column (skipped)\n";
+                continue;
+            }
+
+            $fkName = "fk_{$table}_{$column}";
+
+            $sql = "ALTER TABLE `$table`
+                    ADD CONSTRAINT `$fkName`
+                    FOREIGN KEY (`$column`)
+                    REFERENCES `$refTable`(`$refColumn`)
+                    ON UPDATE $onUpdate
+                    ON DELETE $onDelete";
+
+            if ($conn->query($sql)) {
+                echo "✔ FK added: $table.$column → $refTable.$refColumn\n";
+            } else {
+                echo "❌ FK failed on $table.$column → $refTable.$refColumn | Error: " . $conn->error . "\n";
+            }
+        }
+    }
+
+    echo "\n🎉 Migration completed!\n";
     exit;
+
 }
 
 // =======================================================
-// COMMAND: migrate:fresh
+// migrate:fresh
 // =======================================================
 if ($cmd === "migrate:fresh") {
+
     $conn = db();
     $tables = load_migrations();
+
     echo "⚠ Menghapus semua tabel...\n";
+
     if ($DB["connection"] !== "sqlite") {
         $conn->query("SET FOREIGN_KEY_CHECKS = 0");
     }
-    foreach ($tables as $table => $f) {
-        $ok = ($DB["connection"] === "sqlite")
+
+    foreach ($tables as $filename => $fn) {
+        $table = explode("_create_", $filename)[1] ?? null;
+        $table = str_replace(".php", "", $table);
+
+        if (!$table) continue;
+
+        $drop = ($DB["connection"] === "sqlite")
             ? $conn->exec("DROP TABLE IF EXISTS `$table`")
             : $conn->query("DROP TABLE IF EXISTS `$table`");
-        echo $ok ? "✔ Dropped: $table\n" : " Gagal drop $table\n";
+
+        echo $drop ? "✔ Dropped: $table\n" : "Gagal drop $table\n";
     }
+
     if ($DB["connection"] !== "sqlite") {
         $conn->query("SET FOREIGN_KEY_CHECKS = 1");
     }
+
     echo "\n🔄 Migrating ulang...\n";
-    passthru("php blueprint migrate");
+    passthru("php xion migrate");
     exit;
 }
+
+
+
 // =======================================================
-// COMMAND: make:seed
+// Seeder Commands
 // =======================================================
 if ($cmd === "make:seed") {
-    if (!$arg) {
-        echo "Nama seeder tidak diberikan!\n";
-        exit;
-    }
+
+    if (!$arg) die("Nama seeder tidak diberikan!\n");
+
     $name = strtolower($arg);
     $folder = __DIR__ . "/database/seeders";
-    if (!is_dir($folder)) mkdir($folder, 0777, true);
-    $file = $folder . "/{$name}.php";
-    if (file_exists($file)) {
-        echo "Seeder {$name}.php sudah ada!\n";
-        exit;
-    }
-   $template = <<<EOT
-    <?php
-    return [
-        [
-            "id" => 1,
-            "nama" => "lukman",
-            "username"=>"lukman1",
-            "email" => "lukman@gmail.com",
-            "password"=>"1234567890",
-            "role"=>"user",
-            "created_at" => date("Y-m-d H:i:s"),
-            "updated_at" => date("Y-m-d H:i:s")
-        ]
-    ];
 
-    EOT;
+    if (!is_dir($folder)) mkdir($folder, 0777, true);
+
+    $file = $folder . "/{$name}.php";
+
+    $template = <<<PHP
+<?php
+
+return [
+    [
+        "id" => 1,
+        "nama" => "demo",
+        "email" => "demo@mail.com",
+        "password" => "123456",
+        "created_at" => date("Y-m-d H:i:s"),
+        "updated_at" => date("Y-m-d H:i:s")
+    ]
+];
+
+PHP;
 
     file_put_contents($file, $template);
-    echo "✔ Seeder dibuat: database/seeders/{$name}.php\n";
+    echo "✔ Seeder dibuat: database/seeders/$name.php\n";
     exit;
 }
 
-// =======================================================
-// COMMAND: seed
-// =======================================================
+
 if ($cmd === "seed") {
+
     $conn = db();
     $folder = __DIR__ . "/database/seeders";
 
-    if (!is_dir($folder)) {
-        echo "❌ Folder database/seeders tidak ditemukan!\n";
-        exit;
-    }
+    if (!is_dir($folder)) die("❌ Folder database/seeders tidak ditemukan!\n");
+
     $files = scandir($folder);
+
     foreach ($files as $file) {
+
         if (pathinfo($file, PATHINFO_EXTENSION) !== "php") continue;
+
         $table = pathinfo($file, PATHINFO_FILENAME);
         $rows = include $folder . "/" . $file;
+
         foreach ($rows as $r) {
+
             $cols = "`" . implode("`,`", array_keys($r)) . "`";
             $vals = "'" . implode("','", array_values($r)) . "'";
+
             $sql = "INSERT INTO `$table` ($cols) VALUES ($vals)";
+
             $ok = ($DB["connection"] === "sqlite") ? $conn->exec($sql) : $conn->query($sql);
-            echo $ok ? "✔ Seeded $table\n" : "❌ Gagal seed $table\n";
+
+            echo $ok ? "✔ Seeded: $table\n" : "❌ Gagal seed $table\n";
         }
     }
+
     exit;
 }
 
+
+
 // =======================================================
-// COMMAND: config:show
+// rollback (hapus migration terakhir)
 // =======================================================
-if ($cmd === "config:show") {
-    echo "==== APP CONFIG ====\n";
-    echo "APP_TITLE    : " . ($ENV["APP_TITLE"] ?? "APP") . "\n";
-    echo "APP_ENV      : " . ($ENV["APP_ENV"] ?? "local") . "\n";
-    echo "APP_DEBUG    : " . ($ENV["APP_DEBUG"] ?? "false") . "\n";
-    echo "APP_URL      : " . ($ENV["APP_URL"] ?? "") . "\n\n";
-    echo "==== DATABASE CONFIG ====\n";
-    echo "Connection   : " . $DB["connection"] . "\n";
-    if ($DB["connection"] === "sqlite") {
-        echo "Database File: " . $DB["sqlite"] . "\n";
-    } else {
-        echo "Host         : " . $DB["host"] . "\n";
-        echo "Port         : " . $DB["port"] . "\n";
-        echo "User         : " . $DB["user"] . "\n";
-        echo "Pass         : " . $DB["pass"] . "\n";
-        echo "Database     : " . $DB["name"] . "\n";
+if ($cmd === "rollback") {
+
+    $conn = db();
+    $tables = array_keys(load_migrations());
+
+    if (empty($tables)) die("Tidak ada migration!\n");
+
+    $last = end($tables);
+    $table = explode("_create_", $last)[1] ?? null;
+    $table = str_replace(".php", "", $table);
+
+    if (!$table) die("Migration invalid!\n");
+
+    echo "⚠ Rollback: $last\n";
+
+    if ($DB["connection"] !== "sqlite") {
+        $conn->query("SET FOREIGN_KEY_CHECKS = 0");
     }
+
+    $drop = ($DB["connection"] === "sqlite")
+        ? $conn->exec("DROP TABLE IF EXISTS `$table`")
+        : $conn->query("DROP TABLE IF EXISTS `$table`");
+
+    echo $drop ? "✔ Table `$table` dihapus.\n" : "Gagal rollback.\n";
+
+    if ($DB["connection"] !== "sqlite") {
+        $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+    }
+
     exit;
 }
 
+
+
 // =======================================================
-// COMMAND: make:controller
+// drop (hapus seluruh database)
+// =======================================================
+if ($cmd === "drop") {
+
+    global $DB;
+
+    echo "⚠ PERINGATAN! Menghapus seluruh database: {$DB['name']}\n";
+    echo "Ketik 'yes' untuk melanjutkan: ";
+
+    $confirm = trim(fgets(STDIN));
+    if (!in_array(strtolower($confirm), ["yes", "y"])) {
+        die("Dibatalkan.\n");
+    }
+
+    if ($DB["connection"] === "sqlite") {
+        $path = __DIR__ . "/database/" . $DB["sqlite"];
+        if (file_exists($path)) unlink($path);
+        echo "✔ SQLite database '{$DB['sqlite']}' dihapus.\n";
+        exit;
+    }
+
+    $mysqli = new mysqli($DB["host"], $DB["user"], $DB["pass"], "", $DB["port"]);
+    if ($mysqli->connect_error) die("Koneksi gagal!");
+
+    $sql = "DROP DATABASE IF EXISTS `{$DB['name']}`";
+
+    echo $mysqli->query($sql)
+        ? "✔ Database dihapus.\n"
+        : "❌ Gagal menghapus DB.\n";
+
+    exit;
+}
+
+
+
+// =======================================================
+// make:controller
 // =======================================================
 if ($cmd === "make:controller") {
-    if (!$arg) {
-        echo "Nama controller tidak diberikan!\n";
-        exit;
-    }
-    $name = ucfirst($arg); // Nama controller dengan huruf awal kapital
+
+    if (!$arg) die("Nama controller tidak diberikan!\n");
+
+    $name = ucfirst($arg);
     $folder = __DIR__ . "/app/Http/Controllers";
+
     if (!is_dir($folder)) mkdir($folder, 0777, true);
+
     $file = $folder . "/{$name}.php";
-    if (file_exists($file)) {
-        echo "Controller {$name}.php sudah ada!\n";
-        exit;
-    }
-    $template = <<<EOT
+
+    $template = <<<PHP
 <?php
 
 namespace App\Http\Controllers;
-use View;
+
 class {$name}
 {
     public function index()
@@ -318,120 +471,30 @@ class {$name}
         echo "Hello from {$name} controller!";
     }
 }
-EOT;
+PHP;
+
     file_put_contents($file, $template);
-    echo "✔ Controller dibuat: app/Controllers/{$name}.php\n";
+
+    echo "✔ Controller dibuat: app/Http/Controllers/{$name}.php\n";
     exit;
 }
 
+
+
 // =======================================================
-// COMMAND: serve
+// serve
 // =======================================================
 if ($cmd === "serve") {
+
     $host = $argv[2] ?? "127.0.0.1";
     $port = $argv[3] ?? "8080";
-    $command = "php -S {$host}:{$port} -t public";
-    echo "Server berjalan di: http://{$host}:{$port}\n";
-    echo "Tekan CTRL+C untuk menghentikan.\n\n";
-    passthru($command);
-    exit;
-}
-// =======================================================
-// COMMAND: rollback (hapus tabel terakhir)
-// =======================================================
-if ($cmd === "rollback") {
-    $conn = db();
-    $migrations = load_migrations();
-    if (empty($migrations)) {
-        echo "Tidak ada migration!\n";
-        exit;
-    }
-    $files = array_keys($migrations);
-    sort($files);
-    $last = end($files);
-    echo "⚠ Rollback migration: $last\n";
-    if ($DB["connection"] !== "sqlite") {
-        $conn->query("SET FOREIGN_KEY_CHECKS = 0");
-    }
-    $sql = "DROP TABLE IF EXISTS `$last`";
-    $ok = ($DB["connection"] === "sqlite")
-        ? $conn->exec($sql)
-        : $conn->query($sql);
-    if ($ok) {
-        echo "✔ Table `$last` berhasil dihapus.\n";
-    } else {
-        echo "Gagal rollback tabel `$last`.\n";
-    }
-    if ($DB["connection"] !== "sqlite") {
-        $conn->query("SET FOREIGN_KEY_CHECKS = 1");
-    }
+
+    echo "Server berjalan di: http://$host:$port\n";
+    passthru("php -S $host:$port -t public");
     exit;
 }
 
-// =======================================================
-// COMMAND: drop (hapus seluruh DATABASE)
-// =======================================================
-if ($cmd === "drop") {
-    global $DB;
-    echo "⚠ PERINGATAN!\n";
-    echo "Command ini akan MENGHAPUS SELURUH DATABASE: {$DB['name']}\n";
-    echo "Ketik 'yes' untuk melanjutkan: ";
-    $confirm = trim(fgets(STDIN));
-     if (!in_array(strtolower($confirm), ["yes", "y"])) {
-        echo "Dibatalkan.\n";
-        exit;
-    }
-    echo "\n🗑 Menghapus database...\n";
-    if ($DB["connection"] === "sqlite") {
-        $path = __DIR__ . "/database/" . $DB["sqlite"];
-        if (file_exists($path)) {
-            unlink($path);
-            echo "✔ SQLite database '{$DB['sqlite']}' telah dihapus.\n";
-        } else {
-            echo "File SQLite tidak ditemukan.\n";
-        }
-        exit;
-    }
-    $mysqli = new mysqli($DB["host"], $DB["user"], $DB["pass"], "", $DB["port"]);
-    if ($mysqli->connect_error) {
-        die("Koneksi gagal: " . $mysqli->connect_error);
-    }
-    $dbName = $DB["name"];
-    $sql = "DROP DATABASE IF EXISTS `$dbName`";
-    if ($mysqli->query($sql)) {
-        echo "✔ Database `$dbName` berhasil dihapus.\n";
-    } else {
-        echo "Gagal menghapus database `$dbName`: " . $mysqli->error . "\n";
-    }
-    exit;
-}
-// =======================================================
-// COMMAND: model (model)
-// =======================================================
-if ($cmd === "make:model") {
-    // membuat folder
-    $folder = __DIR__ . "/app/Models";
-    if (!is_dir($folder)) mkdir($folder, 0777, true);
-    $name = ucfirst($arg);
-    $file = $folder . "/{$name}.php";
-    if (file_exists($file)) {
-        echo "❌ Model {$name}.php sudah ada!\n";
-        exit;
-    }
-    $template = <<<PHP
-<?php
 
-namespace App\Models;
-use App\Core\Model;
-
-class {$name} {
-    protected \$table = "{$arg}";
-}
-PHP;
-    file_put_contents($file, $template);
-    echo "✔ Model dibuat: app/Models/{$name}.php\n";
-    exit;
-}
 
 // =======================================================
 // HELP
@@ -449,7 +512,7 @@ Xion CLI Commands:
   php xion seed
   php xion make:seed users
   php xion config:show
-  php xion print
   php xion rollback
   php xion drop
 ";
+
